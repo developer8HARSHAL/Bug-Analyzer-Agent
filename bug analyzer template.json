@@ -1,0 +1,172 @@
+{
+  "name": "Bug Analyzer Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "functionCode": "return items.map(item => {\n  const body = item.json.body || item.json;\n  let title = \"\", description = \"\", reporter = \"\", timestamp = \"\", url = \"\", severity = \"medium\", bugId = \"\", source = \"\";\n\n  try {\n    if (body.issue) {\n      const issue = body.issue;\n      title = issue.title || \"Untitled Issue\";\n      description = (issue.body || \"\").trim();\n      reporter = issue.user?.login || \"unknown\";\n      timestamp = issue.created_at || new Date().toISOString();\n      url = issue.html_url || \"\";\n      \n      const severityLabels = issue.labels?.map(l => l.name.toLowerCase()) || [];\n      if (severityLabels.includes('critical')) severity = \"critical\";\n      else if (severityLabels.includes('high')) severity = \"high\"; \n      else if (severityLabels.includes('medium')) severity = \"medium\";\n      else if (severityLabels.includes('low')) severity = \"low\";\n      \n      bugId = `github_${issue.id}`;\n      source = \"github_issue\";\n    }\n\n    const cleanText = `${title} ${description}`\n      .replace(/```[\\s\\S]*?```/g, '[CODE_BLOCK]')\n      .replace(/https?:\\/\\/[^\\s]+/g, '[URL]')\n      .replace(/\\s+/g, ' ')\n      .trim()\n      .substring(0, 8000);\n\n    return {\n      json: {\n        text: cleanText,\n        metadata: {\n          title: title.substring(0, 200),\n          description: description.substring(0, 1000),\n          reporter,\n          timestamp,\n          url,\n          severity,\n          bug_id: bugId || `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n          source\n        }\n      }\n    };\n  } catch (error) {\n    return {\n      json: {\n        text: \"Error processing issue data\",\n        metadata: {\n          title: \"Processing Error\",\n          description: `Error: ${error.message}`,\n          reporter: \"system\",\n          timestamp: new Date().toISOString(),\n          severity: \"medium\",\n          bug_id: `error_${Date.now()}`,\n          source: \"error\",\n          error: true\n        }\n      }\n    };\n  }\n});"
+      },
+      "name": "Prepare Issue Text",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [560, -128]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "owner": "={{ $vars.GITHUB_OWNER }}",
+        "repository": "={{ $vars.GITHUB_REPO }}",
+        "events": ["issues", "issue_comment"]
+      },
+      "name": "GitHub Trigger",
+      "type": "n8n-nodes-base.githubTrigger",
+      "typeVersion": 1,
+      "position": [208, -80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.EMBEDDING_API_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  input: [$json.text || 'Default bug report text'],\n  model: $vars.EMBEDDING_MODEL || 'text-embedding-ada-002'\n} }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "name": "Generate Embeddings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [800, -144]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  try {\n    const preparedData = $('Prepare Issue Text').item.json;\n    \n    // OpenAI embedding response format\n    let embedding = null;\n    if (item.json.data?.[0]?.embedding) {\n      embedding = item.json.data[0].embedding;\n    }\n    \n    if (!embedding || !Array.isArray(embedding)) {\n      throw new Error('No valid embedding found');\n    }\n    \n    const bugId = preparedData.metadata.bug_id;\n\n    return {\n      json: {\n        vector_payload: {\n          vectors: [{\n            id: bugId,\n            values: embedding,\n            metadata: {\n              text: preparedData.text,\n              title: preparedData.metadata.title,\n              reporter: preparedData.metadata.reporter,\n              timestamp: preparedData.metadata.timestamp,\n              severity: preparedData.metadata.severity,\n              source: preparedData.metadata.source,\n              bug_id: bugId\n            }\n          }]\n        },\n        search_vector: embedding,\n        bug_metadata: preparedData.metadata\n      }\n    };\n  } catch (error) {\n    return {\n      json: {\n        error: true,\n        error_message: error.message,\n        vector_payload: null\n      }\n    };\n  }\n});"
+      },
+      "name": "Process Embeddings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1024, -144]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.VECTOR_SEARCH_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  vector: $json.search_vector,\n  topK: 10,\n  includeMetadata: true\n} }}"
+      },
+      "name": "Search Similar Bugs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1248, -144]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  try {\n    const searchResults = item.json;\n    \n    // Pinecone response format\n    let matches = searchResults.matches || [];\n    \n    const threshold = parseFloat($vars.SIMILARITY_THRESHOLD || '0.75');\n    const maxResults = parseInt($vars.MAX_RESULTS || '5');\n    \n    const filteredMatches = matches\n      .filter(match => match.score >= threshold)\n      .slice(0, maxResults)\n      .map(match => ({\n        ...match,\n        similarity_percentage: Math.round(match.score * 100)\n      }));\n    \n    return {\n      json: {\n        filtered_matches: filteredMatches,\n        total_found: matches.length,\n        high_similarity_count: filteredMatches.filter(m => m.score >= 0.85).length\n      }\n    };\n  } catch (error) {\n    return {\n      json: {\n        error: true,\n        filtered_matches: []\n      }\n    };\n  }\n});"
+      },
+      "name": "Filter Similar Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1456, -144]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.VECTOR_UPSERT_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $('Process Embeddings').item.json.vector_payload }}"
+      },
+      "name": "Store Bug Vector",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1680, -144]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $vars.LLM_API_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $vars.LLM_MODEL || 'gpt-3.5-turbo',\n  messages: [{\n    role: 'user',\n    content: `Analyze this bug report:\\n\\nTitle: ${$('Prepare Issue Text').item.json.metadata.title}\\nDescription: ${$('Prepare Issue Text').item.json.metadata.description?.substring(0, 500)}\\nSeverity: ${$('Prepare Issue Text').item.json.metadata.severity}\\nSimilar bugs: ${$('Filter Similar Results').item.json.filtered_matches?.length || 0}\\n\\nProvide analysis:\\nRoot Cause: [technical issue]\\nImpact: [business impact]\\nPriority: [Critical/High/Medium/Low]\\nNext Steps:\\n- [action 1]\\n- [action 2]\\n- [action 3]`\n  }],\n  temperature: 0.2,\n  max_tokens: 500\n} }}"
+      },
+      "name": "AI Analysis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1904, -144]
+    },
+    {
+      "parameters": {
+        "jsCode": "return items.map(item => {\n  try {\n    // OpenAI response format\n    let analysisText = '';\n    if (item.json.choices?.[0]) {\n      analysisText = item.json.choices[0].message?.content || '';\n    }\n    \n    // Clean and format for Slack\n    const cleanText = analysisText\n      .replace(/(Root Cause|Impact|Priority|Next Steps):/gi, '*$1:*')\n      .replace(/^\\s*[-•]\\s*/gm, '• ')\n      .trim();\n    \n    return { json: { text: cleanText } };\n    \n  } catch (error) {\n    return {\n      json: {\n        text: 'Analysis processing failed - manual review required',\n        error: true\n      }\n    };\n  }\n});"
+      },
+      "name": "Format Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2112, -144]
+    },
+    {
+      "parameters": {
+        "channel": "={{ $vars.SLACK_CHANNEL || '#bugs' }}",
+        "text": "={{ '*Bug Report Analysis*\\n\\n*Issue Details:*\\n• *Title:* ' + $('Prepare Issue Text').item.json.metadata.title + '\\n• *Reporter:* ' + ($('Prepare Issue Text').item.json.metadata.reporter === 'system' ? 'System' : '@' + $('Prepare Issue Text').item.json.metadata.reporter) + '\\n• *Severity:* ' + $('Prepare Issue Text').item.json.metadata.severity.toUpperCase() + '\\n• *Bug ID:* `' + $('Prepare Issue Text').item.json.metadata.bug_id + '`\\n\\n*Similarity Analysis:*\\n• Similar bugs found: ' + ($('Filter Similar Results').item.json.filtered_matches?.length || 0) + '\\n• High similarity matches: ' + ($('Filter Similar Results').item.json.high_similarity_count || 0) + '\\n\\n' + $('Format Analysis').item.json.text }}"
+      },
+      "name": "Send to Slack",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 1,
+      "position": [2368, -144]
+    }
+  ],
+  "connections": {
+    "Prepare Issue Text": {
+      "main": [[{"node": "Generate Embeddings", "type": "main", "index": 0}]]
+    },
+    "GitHub Trigger": {
+      "main": [[{"node": "Prepare Issue Text", "type": "main", "index": 0}]]
+    },
+    "Generate Embeddings": {
+      "main": [[{"node": "Process Embeddings", "type": "main", "index": 0}]]
+    },
+    "Process Embeddings": {
+      "main": [[{"node": "Search Similar Bugs", "type": "main", "index": 0}]]
+    },
+    "Search Similar Bugs": {
+      "main": [[{"node": "Filter Similar Results", "type": "main", "index": 0}]]
+    },
+    "Filter Similar Results": {
+      "main": [[{"node": "Store Bug Vector", "type": "main", "index": 0}]]
+    },
+    "Store Bug Vector": {
+      "main": [[{"node": "AI Analysis", "type": "main", "index": 0}]]
+    },
+    "AI Analysis": {
+      "main": [[{"node": "Format Analysis", "type": "main", "index": 0}]]
+    },
+    "Format Analysis": {
+      "main": [[{"node": "Send to Slack", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "description": "An intelligent bug analysis workflow that automatically processes GitHub issues, generates embeddings for semantic similarity search, identifies duplicate or similar bugs using vector database queries, runs AI-powered analysis to determine root causes and priorities, and posts comprehensive reports to Slack. The workflow integrates GitHub webhooks, OpenAI embeddings API, Pinecone vector database, GPT analysis, and Slack notifications to streamline bug triage and management.",
+    "variables": {
+      "GITHUB_OWNER": "Your GitHub repository owner/organization name",
+      "GITHUB_REPO": "Your GitHub repository name to monitor for issues",
+      "EMBEDDING_API_URL": "OpenAI API embeddings endpoint (https://api.openai.com/v1/embeddings)",
+      "EMBEDDING_MODEL": "OpenAI embedding model name (default: text-embedding-ada-002)",
+      "VECTOR_SEARCH_URL": "Pinecone vector database search endpoint URL",
+      "VECTOR_UPSERT_URL": "Pinecone vector database upsert endpoint URL",
+      "SIMILARITY_THRESHOLD": "Minimum similarity score for related bugs (default: 0.75)",
+      "MAX_RESULTS": "Maximum number of similar bugs to return (default: 5)",
+      "LLM_API_URL": "OpenAI API chat completions endpoint (https://api.openai.com/v1/chat/completions)",
+      "LLM_MODEL": "OpenAI model for analysis (default: gpt-3.5-turbo)",
+      "SLACK_CHANNEL": "Slack channel to post reports (default: #bugs)"
+    },
+    "credentials": {
+  "githubOAuth2Api": "GitHub OAuth2 API credentials for repository access",
+  "httpBearerAuth": "OpenAI/Pinecone API key for embeddings, LLM requests, and vector DB",
+  "slackApi": "Slack Bot API token for posting messages"
+  }
+  },
+  "tags": ["AI", "Bug Tracking", "Slack", "GitHub", "Vector DB", "LLM"]
+}
