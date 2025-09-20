@@ -38,7 +38,7 @@ The Bug Analyzer Agent follows a comprehensive 10-step process:
 
 Below is the complete Bug Analyzer Agent automation pipeline as seen in the n8n workflow editor:
 
-![Bug Analyzer Agent Workflow Editor](n8n1.png)
+![Bug Analyzer Agent Workflow Editor](template.n8n1.png)
 
 ### Slack Integration Output
 
