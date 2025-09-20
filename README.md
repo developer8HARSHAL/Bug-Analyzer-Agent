@@ -76,13 +76,13 @@ Define these variables as n8n environment variables or workflow variables:
 |----------------------|----------------------------------------------|------------------------------------------------------------------|
 | GITHUB_OWNER         | GitHub repository owner or organization      | -                                                                |
 | GITHUB_REPO          | Repository name to monitor                    | -                                                                |
-| EMBEDDING_API_URL    | OpenAI Embeddings API endpoint                | https://api.openai.com/v1/embeddings                             |
+| EMBEDDING_API_URL    | OpenAI Embeddings API endpoint                | -                          |
 | EMBEDDING_MODEL      | OpenAI embedding model                        | text-embedding-ada-002                                           |
 | VECTOR_SEARCH_URL    | Pinecone vector database search endpoint      | -                                                                |
 | VECTOR_UPSERT_URL    | Pinecone vector database upsert endpoint      | -                                                                |
 | SIMILARITY_THRESHOLD | Similarity score threshold for duplicate detection | 0.75                                                      |
 | MAX_RESULTS          | Maximum similar bugs to return                | 5                                                                |
-| LLM_API_URL          | OpenAI Chat Completions endpoint              | https://api.openai.com/v1/chat/completions                       |
+| LLM_API_URL          | OpenAI Chat Completions endpoint              | -                      |
 | LLM_MODEL            | OpenAI model for analysis                     | gpt-3.5-turbo                                                    |
 | SLACK_CHANNEL        | Slack channel for bug reports                 | #bugs                                                            |
 
