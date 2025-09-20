@@ -1,17 +1,17 @@
 # Bug Analyzer Agent
 
-The **Bug Analyzer Agent** is an intelligent n8n workflow for automated bug triage, semantic duplicate detection, and AI-powered analysis of GitHub issues. It integrates GitHub, OpenAI embeddings, Pinecone vector search, GPT for analysis, and Slack notifications to accelerate bug management for engineering teams[attached_file:1].
+The **Bug Analyzer Agent** is an intelligent n8n workflow for automated bug triage, semantic duplicate detection, and AI-powered analysis of GitHub issues. It integrates GitHub, OpenAI embeddings, Pinecone vector search, GPT for analysis, and Slack notifications to accelerate bug management for engineering teams.
 
 ---
 
 ## Features
 
-- Automated monitoring of GitHub issues and comments via webhooks[attached_file:1].
-- Cleans and normalizes issue data for semantic analysis[attached_file:1].
-- Generates OpenAI embeddings for each issue and checks for duplicate or similar bugs using a vector database (Pinecone)[attached_file:1].
-- Performs GPT-based technical and business analysis, suggesting best next steps[attached_file:1].
-- Publishes comprehensive analysis and similarity findings to a Slack channel[attached_file:1].
-- Fully configurable with environment variables for quick adaptation[attached_file:1].
+- Automated monitoring of GitHub issues and comments via webhooks.
+- Cleans and normalizes issue data for semantic analysis.
+- Generates OpenAI embeddings for each issue and checks for duplicate or similar bugs using a vector database (Pinecone).
+- Performs GPT-based technical and business analysis, suggesting best next steps.
+- Publishes comprehensive analysis and similarity findings to a Slack channel.
+- Fully configurable with environment variables for quick adaptation.
 
 ---
 
@@ -78,14 +78,14 @@ You must also add the following credentials to n8n:
 
 ## Customization
 
-- Change the similarity threshold, models, and Slack formatting as needed[attached_file:1].
-- Extend with additional triggers for other bug-tracking sources or notification targets[attached_file:1].
+- Change the similarity threshold, models, and Slack formatting as needed.
+- Extend with additional triggers for other bug-tracking sources or notification targets.
 
 ---
 
 ## License & Attribution
 
-This template is provided for automating bug analysis with n8n, OpenAI, Pinecone, and Slack. Attribution is appreciated for public use or adaptation[attached_file:1].
+This template is provided for automating bug analysis with n8n, OpenAI, Pinecone, and Slack. Attribution is appreciated for public use or adaptation.
 
 ---
 
@@ -95,4 +95,4 @@ AI, Bug Tracking, Slack, GitHub, Vector DB, LLM
 
 ---
 
-For issues or contributions, open an issue in your project repository or reach out to the maintainer[attached_file:1].
+For issues or contributions, open an issue in your project repository or reach out to the maintainer.
